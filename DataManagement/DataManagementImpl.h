@@ -13,7 +13,7 @@ class DataManagementImpl {
     std::shared_ptr<Input*> in;
     std::shared_ptr<Output*> out;
     std::shared_ptr<Data*> received_data;
-    std::shared_ptr<FormattedData*> injested_data;
+    std::shared_ptr<FormattedData*> ingested_data;
 
     public:
         DataManagementImpl(std::shared_ptr<Input*> i, std::shared_ptr<Output*> o);
