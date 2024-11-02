@@ -6,4 +6,5 @@ app = Flask(__name__)
 def latest_location_data(long: int, lat: int) -> str:
     return str(long) + " " + str(lat)
 
-app.run()
+def activate_server():
+    app.run()
