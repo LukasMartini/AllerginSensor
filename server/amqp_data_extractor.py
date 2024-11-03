@@ -5,76 +5,79 @@ import sarracenia.credentials
 import urllib.request
 import xml.etree.ElementTree
 
+import server.data_outputter as data_outputter
 
-def amqp_data_extractor():
-    maximum_message_intake = 100
+# TODO: set up data extractor to have the queue running all the time, with a polling option to allow other parts of the program to know if there have been any updates.
 
-    # Setup sarracenia settings
-    options = sarracenia.moth.default_options
+class amqp_data_extractor:
 
-    options.update(sarracenia.moth.amqp.default_options)
+    def __init__(self, outputter: data_outputter):
+        self.outputter = outputter
+        self.region_en = ''
+        self.region_fr = ''
+        self.utc_stamp = ''
+        self.air_quality_health_index = ''
+        self.special_notes = ''
 
-    options['broker'] = sarracenia.credentials.Credential('amqps://anonymous:anonymous@dd.weather.gc.ca')
-    options['topicPrefix'] = ['v02', 'post']
-    options['bindings'] = [('xpublic', ['v02', 'post'], ['air_quality', 'aqhi', 'ont', 'observation', 'realtime', 'xml', '#']  )] # the third set of options are the names of directories on the server. 
-    options['queueName'] = 'q_anonymous_aqsamqpreader_devqueue'
-    options['batch'] = 1
+    # The main program loop. Runs continuously, pulling data from the Government datamart.
+    # Once data has been received, it notifies the observing data_outputter class to output the data according to its implementation of data_outputter.output().
+    def extract_data(self):
+        options = sarracenia.moth.default_options
 
-    print('options: %s' % options)  
+        options.update(sarracenia.moth.amqp.default_options)
 
-    moth = sarracenia.moth.Moth.subFactory(options)
+        options['broker'] = sarracenia.credentials.Credential('amqps://anonymous:anonymous@dd.weather.gc.ca')
+        options['topicPrefix'] = ['v02', 'post']
+        options['bindings'] = [('xpublic', ['v02', 'post'], ['air_quality', 'aqhi', 'ont', 'observation', 'realtime', 'xml', '#']  )] # the third set of options are the names of directories on the server. 
+        options['queueName'] = 'q_anonymous_aqsamqpreader_devqueue'
+        options['batch'] = 1
 
-    while maximum_message_intake > 0:
-        incoming_messages = moth.newMessages()
-        for message in incoming_messages:
-            # Construct the URL for accessing the message from the datamart
-            url = message['baseUrl']
-            if 'retPath' in message:
-                url += message['retPath']
-            else:
-                url += message['relPath']
-            
-            with urllib.request.urlopen(url) as posted_file:
-                # Attepmt to get string data from URL. If this fails, skip the file. TODO: figure out why this fails.
-                try:
-                    xml_data = posted_file.read().decode('utf-8') 
-                except UnicodeDecodeError:
-                    print(url)
-                    continue
+        print('options: %s' % options)  
 
-                # Attempt to parse the data. If it fails, skip the file.
-                try:
-                    xml_data = xml.etree.ElementTree.fromstring(xml_data)
-                except xml.etree.ElementTree.ParseError:
-                    posted_file.close()
-                    continue
+        moth = sarracenia.moth.Moth.subFactory(options)
 
-                # Extract data from the file.
-                region_en = ''
-                region_fr = ''
-                utc_stamp = ''
-                air_quality_health_index = ''
-                special_notes = ''
-
-                for element in xml_data.iter('*'):
-                    if element.tag == 'region':
-                        region_en = element.attrib.get('nameEn')
-                        region_fr = element.attrib.get('nameFr')
-                    elif element.tag == 'UTCStamp' and element.text is not None:
-                        utc_stamp = element.text
-                    elif element.tag == 'airQualityHealthIndex' and element.text is not None:
-                        air_quality_health_index = element.text
-                    elif element.tag == 'specialNotes' and element.text is not None:
-                        special_notes = element.text 
+        while True:
+            incoming_messages = moth.newMessages()
+            for message in incoming_messages:
+                url = message['baseUrl']
+                if 'retPath' in message:
+                    url += message['retPath']
+                else:
+                    url += message['relPath']
                 
-                print(region_en + " " + region_fr + " " + utc_stamp + " " + air_quality_health_index + " " + special_notes)
+                with urllib.request.urlopen(url) as posted_file:
+                    # Attepmt to get string data from URL. If this fails, skip the file. TODO: figure out why this fails.
+                    try:
+                        xml_data = posted_file.read().decode('utf-8') 
+                    except UnicodeDecodeError:
+                        print(url)
+                        continue
 
-                maximum_message_intake -= 1
+                    # Attempt to parse the data. If it fails, skip the file.
+                    try:
+                        xml_data = xml.etree.ElementTree.fromstring(xml_data)
+                    except xml.etree.ElementTree.ParseError:
+                        posted_file.close()
+                        continue
 
-        moth.ack(incoming_messages)
+                    for element in xml_data.iter('*'):
+                        if element.tag == 'region':
+                            self.region_en = element.attrib.get('nameEn')
+                            self.region_fr = element.attrib.get('nameFr')
+                        elif element.tag == 'UTCStamp' and element.text is not None:
+                            self.utc_stamp = element.text
+                        elif element.tag == 'airQualityHealthIndex' and element.text is not None:
+                            self.air_quality_health_index = element.text
+                        elif element.tag == 'specialNotes' and element.text is not None:
+                            self.special_notes = element.text 
+                    
+                    data = (self.region_en, self.region_fr, self.utc_stamp, self.air_quality_health_index, self.special_notes)
+                    self.outputter.output(data)
 
-    moth.cleanup()
-    moth.close()
+            moth.ack(incoming_messages)
+
+        moth.cleanup()
+        moth.close()
 
 # Example data:
 # [{'_format': 'v02', '_deleteOnPost': {'exchange', 'local_offset', 'subtopic', 'ack_id', '_format', 'topic'}, 
