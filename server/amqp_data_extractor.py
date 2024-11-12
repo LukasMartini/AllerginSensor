@@ -28,7 +28,7 @@ class amqp_data_extractor:
 
         options['broker'] = sarracenia.credentials.Credential('amqps://anonymous:anonymous@dd.weather.gc.ca')
         options['topicPrefix'] = ['v02', 'post']
-        options['bindings'] = [('xpublic', ['v02', 'post'], ['air_quality', 'aqhi', 'ont', 'observation', 'realtime', 'xml', '#']  )] # the third set of options are the names of directories on the server. 
+        options['bindings'] = [('xpublic', ['v02', 'post'], ['air_quality', 'aqhi', 'ont', 'observation', 'realtime', 'xml', '#']  )]
         options['queueName'] = 'q_anonymous_aqsamqpreader_devqueue'
         options['batch'] = 1
 
